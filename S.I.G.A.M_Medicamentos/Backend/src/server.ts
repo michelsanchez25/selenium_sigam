@@ -28,7 +28,7 @@ async function asegurarBaseDeDatos() {
     );
   `);
 
-// Insertar usuario administrador por defecto si no existe
+  // Insertar usuario administrador por defecto si no existe
   const correoAdmin = process.env.ADMIN_CORREO || "admin@sigam.com";
   const passwordAdmin = process.env.ADMIN_PASSWORD || "Admin12345*";
   const adminPasswordHash = await bcrypt.hash(passwordAdmin, 10);
@@ -48,8 +48,26 @@ async function iniciar(): Promise<void> {
   await asegurarBaseDeDatos();
   console.log(`✔ Tablas y usuario administrador listos en la base de datos.`);
 
-  const servidor = app.listen(Number(env.puerto), '0.0.0.0', () => {
-    console.log(`✔ SIGAM API escuchando en puerto ${env.puerto}`);
+  // Usar el puerto dinámico de Render (process.env.PORT) o el configurado por defecto
+  const puertoFinal = process.env.PORT || env.puerto || 10000;
+
+  const servidor = app.listen(Number(puertoFinal), '0.0.0.0', () => {
+    console.log(`✔ SIGAM API escuchando en el puerto ${puertoFinal}`);
   });
-  // ... resto del código de cierre
+
+  const apagar = (senal: string) => {
+    console.log(`\n${senal} recibido, cerrando...`);
+    servidor.close(async () => {
+      await cerrarConexion();
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGINT", () => apagar("SIGINT"));
+  process.on("SIGTERM", () => apagar("SIGTERM"));
 }
+
+iniciar().catch((error) => {
+  console.error("✖ No se pudo iniciar el servidor:", error.message ?? error);
+  process.exit(1);
+});
