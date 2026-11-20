@@ -10,6 +10,9 @@ export const pool = new Pool({
   user: env.baseDatos.usuario,
   password: env.baseDatos.clave,
   database: env.baseDatos.nombre,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
 /** Algo que sabe ejecutar consultas: el pool normal o un cliente dentro de una transacción. */
