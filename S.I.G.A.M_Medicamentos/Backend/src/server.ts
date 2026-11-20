@@ -1,57 +1,83 @@
 import { app } from "./app";
 import { env } from "./config/env";
+import { ROLES } from "./config/constantes";
 import { cerrarConexion, verificarConexion, pool } from "./data/base-datos";
-import bcrypt from "bcryptjs";
+import { hashearPassword } from "./utils/contrasenas";
 
-async function asegurarBaseDeDatos() {
-  // Crear tabla de usuarios y medicamentos si no existen
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS usuarios (
-      id_usuario SERIAL PRIMARY KEY,
-      correo VARCHAR(255) UNIQUE NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      rol VARCHAR(50) NOT NULL DEFAULT 'Administrador',
-      estado BOOLEAN DEFAULT true
+const DESCRIPCION_ROLES: Record<string, string> = {
+  [ROLES.ADMINISTRADOR]: "Gestiona usuarios, roles y consulta la auditoría",
+  [ROLES.MEDICO]: "Registra y gestiona órdenes médicas",
+  [ROLES.ENFERMERO_JEFE]: "Revisa órdenes y asigna enfermeros a las aplicaciones",
+  [ROLES.ENFERMERO]: "Registra la administración de medicamentos",
+  [ROLES.FARMACEUTICO]: "Gestiona lotes y dispensaciones",
+};
+
+const VIAS = [
+  "Oral",
+  "Intravenosa",
+  "Intramuscular",
+  "Subcutánea",
+  "Tópica",
+  "Inhalatoria",
+  "Sublingual",
+  "Rectal",
+];
+
+async function asegurarBaseDeDatos(): Promise<void> {
+  for (const nombre of Object.values(ROLES)) {
+    await pool.query(
+      `INSERT INTO roles (nombre, descripcion)
+       VALUES ($1, $2)
+       ON CONFLICT (nombre) DO NOTHING`,
+      [nombre, DESCRIPCION_ROLES[nombre]]
     );
-  `);
+  }
 
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS medicamentos (
-      id_medicamento SERIAL PRIMARY KEY,
-      codigo_cums VARCHAR(100) UNIQUE NOT NULL,
-      tipo_medicamento VARCHAR(100) NOT NULL,
-      nombre_generico VARCHAR(255) NOT NULL,
-      nombre_comercial VARCHAR(255),
-      stock_minimo INTEGER NOT NULL DEFAULT 0,
-      es_controlado BOOLEAN DEFAULT false,
-      estado BOOLEAN DEFAULT true
+  for (const via of VIAS) {
+    await pool.query(
+      `INSERT INTO via_administracion (nombre)
+       VALUES ($1)
+       ON CONFLICT (nombre) DO NOTHING`,
+      [via]
     );
-  `);
+  }
 
-  // Insertar usuario administrador por defecto si no existe
-  const correoAdmin = process.env.ADMIN_CORREO || "admin@sigam.com";
-  const passwordAdmin = process.env.ADMIN_PASSWORD || "Admin12345*";
-  const adminPasswordHash = await bcrypt.hash(passwordAdmin, 10);
+  const existente = await pool.query(
+    `SELECT 1 FROM usuarios WHERE correo = $1`,
+    [env.adminInicial.correo]
+  );
 
-  await pool.query(`
-    INSERT INTO usuarios (correo, password, rol, estado)
-    VALUES ($1, $2, 'Administrador', true)
-    ON CONFLICT (correo) DO NOTHING;
-  `, [correoAdmin, adminPasswordHash]);
+  if (existente.rowCount === 0) {
+    const rol = await pool.query(
+      `SELECT id_rol FROM roles WHERE nombre = $1`,
+      [ROLES.ADMINISTRADOR]
+    );
+
+    if (rol.rows.length > 0) {
+      await pool.query(
+        `INSERT INTO usuarios (id_rol, tipo_documento, documento, nombres, apellidos, correo, password_hash)
+         VALUES ($1, 'CC', '0000000000', 'Administrador', 'SIGAM', $2, $3)
+         ON CONFLICT (correo) DO NOTHING`,
+        [
+          rol.rows[0].id_rol,
+          env.adminInicial.correo,
+          await hashearPassword(env.adminInicial.password),
+        ]
+      );
+    }
+  }
 }
 
 async function iniciar(): Promise<void> {
   await verificarConexion();
   console.log(`✔ Conectado a la base de datos "${env.baseDatos.nombre}"`);
 
-  // Asegurar tablas y datos iniciales automáticamente
   await asegurarBaseDeDatos();
-  console.log(`✔ Tablas y usuario administrador listos en la base de datos.`);
+  console.log(`✔ Datos iniciales y usuario administrador listos en la base de datos.`);
 
-  // Usar el puerto dinámico de Render (process.env.PORT) o el configurado por defecto
   const puertoFinal = process.env.PORT || env.puerto || 10000;
 
-  const servidor = app.listen(Number(puertoFinal), '0.0.0.0', () => {
+  const servidor = app.listen(Number(puertoFinal), "0.0.0.0", () => {
     console.log(`✔ SIGAM API escuchando en el puerto ${puertoFinal}`);
   });
 
