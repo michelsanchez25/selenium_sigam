@@ -28,13 +28,16 @@ async function asegurarBaseDeDatos() {
     );
   `);
 
-  // Insertar usuario administrador por defecto si no existe
-  const adminPasswordHash = await bcrypt.hash(env.admin.password, 10);
+// Insertar usuario administrador por defecto si no existe
+  const correoAdmin = process.env.ADMIN_CORREO || "admin@sigam.com";
+  const passwordAdmin = process.env.ADMIN_PASSWORD || "Admin12345*";
+  const adminPasswordHash = await bcrypt.hash(passwordAdmin, 10);
+
   await pool.query(`
     INSERT INTO usuarios (correo, password, rol, estado)
     VALUES ($1, $2, 'Administrador', true)
     ON CONFLICT (correo) DO NOTHING;
-  `, [env.admin.correo, adminPasswordHash]);
+  `, [correoAdmin, adminPasswordHash]);
 }
 
 async function iniciar(): Promise<void> {
